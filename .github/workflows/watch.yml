@@ -7,6 +7,8 @@ on:
     - cron: "*/10 * * * *"
   workflow_dispatch: {}  # lets you trigger a run manually from the Actions tab
 
+#refresh
+
 permissions:
   contents: write  # needed so the workflow can commit the updated seen_items.json
 
