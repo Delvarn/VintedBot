@@ -1,7 +1,16 @@
 [
   {
-    "name": "PS1",
-    "keyword": "PS1",
-    "max_price": 30
+    "name": "Broken Binding books",
+    "keyword": "Broken Binding"
+  },
+  
+  {
+    "name": "Digimon Guide",
+    "keyword": "Digimon Guide"
+  }
+
+  {
+    "name": "PS1 Prima Guide",
+    "keyword": "prima Guide"
   }
 ]
