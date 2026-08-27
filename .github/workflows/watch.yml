@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs every 10 minutes. Adjust the cron expression to change frequency.
     # Cron is UTC. GitHub may delay runs by a few minutes during high load.
-    - cron: "*/10 * * * *"
+    - cron: "3,13,23,33,43,53 * * * *"   # every 10 min, offset from :00/:10/…
   workflow_dispatch: {}  # lets you trigger a run manually from the Actions tab
 
 #refresh
