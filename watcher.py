@@ -33,6 +33,8 @@ HEADERS = {
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Referer": f"https://{VINTED_DOMAIN}/catalog",
 }
 
 
@@ -59,6 +61,9 @@ def get_session():
     session.headers.update(HEADERS)
     home = session.get(f"https://{VINTED_DOMAIN}/", timeout=15)
     print(f"Homepage status: {home.status_code}; cookies: {list(session.cookies.keys())}")
+    anon = session.cookies.get("anon_id")
+    if anon:
+        session.headers["x-anon-id"] = anon
     return session
 
 
