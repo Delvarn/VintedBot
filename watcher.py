@@ -57,7 +57,8 @@ def get_session():
     """
     session = requests.Session()
     session.headers.update(HEADERS)
-    session.get(f"https://{VINTED_DOMAIN}/", timeout=15)
+    home = session.get(f"https://{VINTED_DOMAIN}/", timeout=15)
+    print(f"Homepage status: {home.status_code}; cookies: {list(session.cookies.keys())}")
     return session
 
 
@@ -91,6 +92,7 @@ def search_vinted(session, search):
             f"  ! Vinted returned status {resp.status_code} for "
             f"'{search.get('keyword')}' — skipping this run for this search."
         )
+        print("  Response start:", resp.text[:200].replace("\n", " "))
         return []
 
     try:
