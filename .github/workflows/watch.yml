@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write  # needed so the workflow can commit the updated seen_items.json
+  actions: write
 
 jobs:
   check:
@@ -40,3 +41,9 @@ jobs:
           git add seen_items.json
           git diff --staged --quiet || git commit -m "Update seen items [skip ci]"
           git push
+          
+      - name: Keep workflow alive
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable watch.yml
