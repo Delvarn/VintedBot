@@ -9,6 +9,9 @@ on:
 
 #refresh
 
+concurrency:
+  group: vinted-watcher
+
 permissions:
   contents: write  # needed so the workflow can commit the updated seen_items.json
   actions: write
