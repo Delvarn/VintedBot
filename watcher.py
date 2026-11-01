@@ -7,6 +7,10 @@ Telegram message for each new item found. Designed to be run on a schedule
 (e.g. via GitHub Actions) with a small JSON file used to remember which
 items have already been seen, so you don't get re-notified.
 
+Vinted retired its JSON search endpoint (/api/v2/catalog/items) in late
+September 2026, so this version reads the normal website search page
+(/catalog) and pulls the listings out of the page itself.
+
 Config lives in searches.json. Secrets (Telegram bot token + chat id) are
 read from environment variables so they never need to be committed to the
 repo.
@@ -14,6 +18,7 @@ repo.
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -27,23 +32,34 @@ SEEN_FILE = Path(__file__).parent / "seen_items.json"
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# Only look at the newest N listings per search, per run.
+MAX_ITEMS = 20
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json, text/plain, */*",
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,*/*;q=0.8"
+    ),
     "Accept-Language": "en-GB,en;q=0.9",
-    "Referer": f"https://{VINTED_DOMAIN}/catalog",
 }
+
+ITEM_LINK_RE = re.compile(r"/items/(\d+)-([a-z0-9][a-z0-9\-]*)")
 
 
 def load_json(path, default):
     if path.exists():
         try:
             return json.loads(path.read_text())
-        except json.JSONDecodeError:
-            print(f"Warning: {path} was not valid JSON, starting fresh.")
+        except json.JSONDecodeError as e:
+            print(f"ERROR: {path.name} is not valid JSON ({e}).")
+            if path == SEARCHES_FILE:
+                # Fail loudly so a broken searches file shows as a red cross
+                # in GitHub Actions instead of silently doing nothing.
+                sys.exit(1)
     return default
 
 
@@ -53,35 +69,85 @@ def save_json(path, data):
 
 def get_session():
     """
-    Vinted's API sits behind anti-bot protection that expects normal
-    browser cookies. Hitting the homepage first picks up the cookies
-    a real browser would have before calling the API.
+    Hitting the homepage first picks up the cookies a real browser would
+    have before it requests a search page.
     """
     session = requests.Session()
     session.headers.update(HEADERS)
-    home = session.get(f"https://{VINTED_DOMAIN}/", timeout=15)
-    print(f"Homepage status: {home.status_code}; cookies: {list(session.cookies.keys())}")
-    anon = session.cookies.get("anon_id")
-    if anon:
-        session.headers["x-anon-id"] = anon
+    home = session.get(f"https://{VINTED_DOMAIN}/", timeout=20)
+    print(
+        f"Homepage status: {home.status_code}; "
+        f"cookies: {list(session.cookies.keys())}"
+    )
     return session
 
 
+def _decode(text):
+    """Turn a JSON-escaped string fragment (\\u00a3, \\" etc.) into plain text."""
+    try:
+        return json.loads(f'"{text}"')
+    except ValueError:
+        return text
+
+
+def parse_catalog_html(page):
+    """
+    Pull listings out of the search results page.
+
+    Item links look like /items/1234567890-some-title-slug. They appear in
+    the order shown on the page (newest first, because we ask for that).
+    Where the page's embedded data also includes a proper title and price
+    next to the item id, we use those; otherwise we fall back to a title
+    built from the link.
+    """
+    # Embedded page data is JSON inside a string, so slashes/quotes can be
+    # escaped. Normalise both so one set of patterns works.
+    text = page.replace("\\/", "/").replace('\\"', '"')
+
+    items = {}
+    for match in ITEM_LINK_RE.finditer(text):
+        item_id, slug = match.group(1), match.group(2)
+        if item_id in items:
+            continue
+        items[item_id] = {
+            "id": item_id,
+            "title": slug.replace("-", " ").title(),
+            "url": f"https://{VINTED_DOMAIN}/items/{item_id}-{slug}",
+            "price": None,
+            "currency": "",
+        }
+
+    for item_id, item in items.items():
+        pos = text.find(f'"id":{item_id},')
+        if pos == -1:
+            continue
+        near = text[pos : pos + 400]
+        title = re.search(r'"title":"([^"]{2,200})"', near)
+        if title:
+            item["title"] = _decode(title.group(1))
+        window = text[pos : pos + 1800]
+        amount = re.search(r'"amount":"?([\d.]+)"?', window)
+        if amount:
+            item["price"] = amount.group(1)
+        currency = re.search(r'"currency_code":"([A-Z]{3})"', window)
+        if currency:
+            item["currency"] = currency.group(1)
+
+    return list(items.values())
+
+
 def search_vinted(session, search):
-    """
-    Calls Vinted's internal catalog search API.
-    Docs are unofficial/reverse-engineered; Vinted can change this without
-    notice, in which case this function is the place to fix things.
-    """
     params = {
         "search_text": search.get("keyword", ""),
         "order": "newest_first",
-        "per_page": 20,
+        "currency": "GBP",
     }
     if search.get("max_price"):
         params["price_to"] = search["max_price"]
     if search.get("min_price"):
         params["price_from"] = search["min_price"]
+    if search.get("catalog_ids"):
+        params["catalog[]"] = search["catalog_ids"]
     if search.get("size_ids"):
         params["size_ids[]"] = search["size_ids"]
     if search.get("brand_ids"):
@@ -89,8 +155,13 @@ def search_vinted(session, search):
     if search.get("status_ids"):
         params["status_ids[]"] = search["status_ids"]
 
-    url = f"https://{VINTED_DOMAIN}/api/v2/catalog/items"
-    resp = session.get(url, params=params, timeout=15)
+    url = f"https://{VINTED_DOMAIN}/catalog"
+    resp = session.get(
+        url,
+        params=params,
+        timeout=20,
+        headers={"Referer": f"https://{VINTED_DOMAIN}/"},
+    )
 
     if resp.status_code != 200:
         print(
@@ -100,13 +171,16 @@ def search_vinted(session, search):
         print("  Response start:", resp.text[:200].replace("\n", " "))
         return []
 
-    try:
-        data = resp.json()
-    except ValueError:
-        print("  ! Response was not JSON — Vinted may have changed its API.")
-        return []
+    items = parse_catalog_html(resp.text)
+    if not items:
+        print(
+            f"  ! Page loaded (status 200, {len(resp.text)} characters) but no "
+            f"listings were found in it for '{search.get('keyword')}'."
+        )
+        print("  Page start:", resp.text[:300].replace("\n", " "))
+        print("  Contains '/items/':", "/items/" in resp.text)
 
-    return data.get("items", [])
+    return items[:MAX_ITEMS]
 
 
 def send_telegram_message(text):
@@ -119,7 +193,6 @@ def send_telegram_message(text):
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
-        "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
     resp = requests.post(url, json=payload, timeout=15)
@@ -128,25 +201,10 @@ def send_telegram_message(text):
 
 
 def format_item_message(item, search_name):
-    title = item.get("title", "Untitled item")
-    price_obj = item.get("price") or {}
-    price = price_obj.get("amount", "?")
-    currency = price_obj.get("currency_code", "")
-    item_id = item.get("id")
-    url = item.get("url") or f"https://{VINTED_DOMAIN}/items/{item_id}"
-    brand = item.get("brand_title", "")
-    size = item.get("size_title", "")
-
-    lines = [
-        f"🆕 <b>New match: {search_name}</b>",
-        f"{title}",
-    ]
-    if brand:
-        lines.append(f"Brand: {brand}")
-    if size:
-        lines.append(f"Size: {size}")
-    lines.append(f"Price: {price} {currency}")
-    lines.append(url)
+    lines = [f"🆕 New match: {search_name}", item["title"]]
+    if item.get("price"):
+        lines.append(f"Price: {item['price']} {item.get('currency', '')}".strip())
+    lines.append(item["url"])
     return "\n".join(lines)
 
 
@@ -169,12 +227,11 @@ def main():
         new_ids = []
 
         for item in items:
-            item_id = str(item.get("id"))
+            item_id = str(item["id"])
             if item_id in seen_ids:
                 continue
             new_ids.append(item_id)
-            message = format_item_message(item, name)
-            send_telegram_message(message)
+            send_telegram_message(format_item_message(item, name))
             any_new = True
             time.sleep(1)  # be gentle on Telegram's rate limits
 
@@ -189,6 +246,10 @@ def main():
 
     if not any_new:
         print("No new items across any search this run.")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 
 
 if __name__ == "__main__":
