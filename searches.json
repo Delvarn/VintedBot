@@ -7,18 +7,22 @@
   },
   
   {
-    "name": "Digimon Guide",
-    "keyword": "Digimon Guide"
-  },
-
-  {
     "name": "iCandy Pram",
     "keyword": "iCandy peach",
     "min price": 100
   },
 
   {
-    "name": "PS1 Prima Guide",
-    "keyword": "prima Guide"
+    "name": "PS1 Game search",
+    "keyword": "abes oddysee",
+    "max price": 25
   }
+
+  {
+    "name": "All Saints Jumper",
+    "keyword": "All Saints Jumper",
+    "max price": 20
+  }
+
+  
 ]
