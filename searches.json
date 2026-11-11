@@ -1,7 +1,9 @@
 [
   {
-    "name": "Broken Binding books",
-    "keyword": "Broken Binding"
+    "name": "Matcha Kindle Search",
+    "keyword": ["matcha", "kindle"],
+    "description": ["matcha", "paperwhite"],
+    "min price": 45
   },
   
   {
