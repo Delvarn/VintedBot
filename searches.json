@@ -5,24 +5,19 @@
     "description": ["matcha", "paperwhite"],
     "min price": 45
   },
-  
   {
     "name": "iCandy Pram",
-    "keyword": "iCandy peach",
+    "keyword": ["iCandy peach"],
     "min price": 100
   },
-
   {
     "name": "PS1 Game search",
-    "keyword": "abes oddysee",
+    "keyword": ["abe's oddysee"],
     "max price": 25
   },
-
   {
     "name": "All Saints Jumper",
-    "keyword": "All Saints Jumper",
+    "keyword": ["All Saints Jumper"],
     "max price": 20
   }
-
-  
 ]
