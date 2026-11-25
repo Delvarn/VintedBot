@@ -1,12 +1,9 @@
 [
-  {
 
   {
     "name": "PS1 Game search",
-    "keyword": ["oddysee"],
-    "max price": 25
-  }
-
+    "keyword": ["odyssey"],
+    "max_price": 25
   }
  
 ]
